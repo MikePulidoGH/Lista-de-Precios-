@@ -914,54 +914,73 @@ function crearEtiquetasEnNuevaSlide() {
  * por el formato: COD [Código]: $[Precio]
  */
 function actualizarPreciosEnSlides() {
-  const SLIDES_ID = '1akyKUYOURQF3AQ7s5-joxsKQzac5XSoO6lyyC-wHbLw';
-  const presentation = SlidesApp.openById(SLIDES_ID);
-
+  const SLIDES_ID = '1akyKUYOURQF3AQ7s5-joxsKQzac5XSoO6lyyC-wHbLw'; // ID correcto según diagnóstico [2, 3]
   const spreadsheet = SpreadsheetApp.openById(ID_PROVEEDORES);
   const baseDatos = {};
 
-  // 1. Recolectar datos
+  // 1. Recolección de datos de la planilla (Columnas A y C) [4, 5]
   HOJAS.forEach(nombre => {
     const sheet = spreadsheet.getSheetByName(nombre);
     if (!sheet) return;
-
     const data = sheet.getDataRange().getValues();
-
     for (let i = 1; i < data.length; i++) {
-      if (data[i][COL_ACTUALIZADO - 1] === true) {
-        let cod = data[i][COL_CODIGO - 1]
-          ? data[i][COL_CODIGO - 1].toString().trim()
-          : "";
-
+      if (data[i][COL_ACTUALIZADO - 1] === true) { // Solo si Columna E es TRUE [5]
+        let cod = data[i][COL_CODIGO - 1] ? data[i][COL_CODIGO - 1].toString().trim() : "";
         let precio = data[i][COL_PRECIO_PR - 1];
-
         if (cod) baseDatos[cod] = precio;
       }
     }
   });
 
-  // 2. Actualizar Slides SIN romper formato
-  const slides = presentation.getSlides();
+  // 2. Procesamiento del Slide con búsqueda parcial (indexOf)
+  try {
+    const deck = SlidesApp.openById(SLIDES_ID);
+    let cambios = 0;
 
-  slides.forEach(slide => {
-    const elements = slide.getPageElements();
+    deck.getSlides().forEach(slide => {
+      slide.getShapes().forEach(shape => {
+        if (shape.getShapeType() === SlidesApp.ShapeType.TEXT_BOX) {
+          const textRange = shape.getText();
+          const textoActual = textRange.asString().trim();
 
-    elements.forEach(element => {
-      if (element.getPageElementType() === SlidesApp.PageElementType.SHAPE) {
-        const shape = element.asShape();
-        const text = shape.getText();
+          // REGLA CLAVE: Buscamos si el código está "dentro" del texto
+          for (let codigo in baseDatos) {
+            // Buscamos el patrón que ya tenés en el Slide: "(COD X:)" [6]
+            const buscador = "COD " + codigo + ":";
+            
+            if (textoActual.indexOf(buscador) !== -1) {
+              const precioVal = baseDatos[codigo];
+              const precioFmt = "$" + Number(precioVal).toLocaleString('es-AR', {minimumFractionDigits: 0});
+              const prefijo = "(COD " + codigo + ":) ";
+              const nuevoTexto = prefijo + precioFmt;
 
-        Object.keys(baseDatos).forEach(cod => {
-          const precio = baseDatos[cod];
+              textRange.setText(nuevoTexto);
 
-          // Reemplaza solo el código, mantiene formato
-          text.replaceAllText(cod, `${cod} $${precio}`);
-        });
-      }
+              // 3. Aplicamos Formatos: Arial 18 para Código y Arial 25 para Precio [7]
+              const puntoCorte = prefijo.length;
+              
+              // Código -> Arial 18
+              textRange.getRange(0, puntoCorte).getTextStyle()
+                .setFontFamily("Arial")
+                .setFontSize(18);
+              
+              // Precio -> Arial 25
+              textRange.getRange(puntoCorte, nuevoTexto.length).getTextStyle()
+                .setFontFamily("Arial")
+                .setFontSize(25);
+              
+              cambios++;
+              break; // Pasa al siguiente cuadro de texto
+            }
+          }
+        }
+      });
     });
-  });
+    Logger.log("✅ Proceso terminado. Se actualizaron " + cambios + " cuadros.");
+  } catch (err) {
+    Logger.log("❌ Error en Slides: " + err.message);
+  }
 }
-
 /**
  * Actualiza el Catálogo de MP usando la Columna D.
  * ID Nuevo: 1QKrfMYG-CVCh0hrO2ECWc9Y9GO2pAG5H4Uy49MVuL7k
@@ -1000,14 +1019,21 @@ function actualizarPreciosMPEnSlides() {
           for (let codigo in baseDatos) {
             const buscador = "COD " + codigo + ":";
             
-            // Lógica de búsqueda parcial para no ignorar el cuadro
+            // Lógica de búsqueda parcial para no ignorar el cuadro [Conversación Previa]
             if (textoActual.indexOf(buscador) !== -1) {
               const precioFmt = "$" + Number(baseDatos[codigo]).toLocaleString('es-AR', {minimumFractionDigits: 0});
-              
-              // Reemplaza solo el precio, mantiene el resto del texto intacto
-              const nuevoTexto = textoActual.replace(buscador, buscador + " $" + precioFmt);
+              const prefijo = "(COD " + codigo + ":) ";
+              const nuevoTexto = prefijo + precioFmt;
 
               textRange.setText(nuevoTexto);
+
+              // 3. Estilos duales: Arial 18 para Código y Arial 25 para Precio [6, 7]
+              const puntoCorte = prefijo.length;
+              textRange.getRange(0, puntoCorte).getTextStyle()
+                .setFontFamily("Arial").setFontSize(18);
+              
+              textRange.getRange(puntoCorte, nuevoTexto.length).getTextStyle()
+                .setFontFamily("Arial").setFontSize(25);
               
               cambios++;
             }
@@ -1016,7 +1042,7 @@ function actualizarPreciosMPEnSlides() {
       });
     });
     Logger.log("✅ Catálogo MP actualizado. Cambios: " + cambios);
-    limpiarChecksActualizado(); // Limpia los checks en la planilla
+    limpiarChecksActualizado(); // Limpia los checks en la planilla [8], [9]
   } catch (err) {
     Logger.log("❌ Error en Slides MP: " + err.message);
   }
