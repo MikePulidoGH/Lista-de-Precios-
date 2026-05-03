@@ -1000,21 +1000,14 @@ function actualizarPreciosMPEnSlides() {
           for (let codigo in baseDatos) {
             const buscador = "COD " + codigo + ":";
             
-            // Lógica de búsqueda parcial para no ignorar el cuadro [Conversación Previa]
+            // Lógica de búsqueda parcial para no ignorar el cuadro
             if (textoActual.indexOf(buscador) !== -1) {
               const precioFmt = "$" + Number(baseDatos[codigo]).toLocaleString('es-AR', {minimumFractionDigits: 0});
-              const prefijo = "(COD " + codigo + ":) ";
-              const nuevoTexto = prefijo + precioFmt;
+              
+              // Reemplaza solo el precio, mantiene el resto del texto intacto
+              const nuevoTexto = textoActual.replace(buscador, buscador + " $" + precioFmt);
 
               textRange.setText(nuevoTexto);
-
-              // 3. Estilos duales: Arial 18 para Código y Arial 25 para Precio [6, 7]
-              const puntoCorte = prefijo.length;
-              textRange.getRange(0, puntoCorte).getTextStyle()
-                .setFontFamily("Arial").setFontSize(18);
-              
-              textRange.getRange(puntoCorte, nuevoTexto.length).getTextStyle()
-                .setFontFamily("Arial").setFontSize(25);
               
               cambios++;
             }
@@ -1023,7 +1016,7 @@ function actualizarPreciosMPEnSlides() {
       });
     });
     Logger.log("✅ Catálogo MP actualizado. Cambios: " + cambios);
-    limpiarChecksActualizado(); // Limpia los checks en la planilla [8], [9]
+    limpiarChecksActualizado(); // Limpia los checks en la planilla
   } catch (err) {
     Logger.log("❌ Error en Slides MP: " + err.message);
   }
