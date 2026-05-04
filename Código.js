@@ -118,8 +118,8 @@ function ejecutarControlSheet(col) {
       
       break; // 👈 Agregamos el break para que no salte al caso 7 (G2)
        
-    case 7: // G2: Crear Nueva Diapositiva
-      crearEtiquetasEnNuevaSlide(); 
+    case 7: // G2: Notificar modificacion de catalogo
+      notificarModificacionCatalogoDiscord();
       break;
     
     case 2: // B2: Sincronización de planillas
@@ -478,6 +478,83 @@ function enviarMensajeConPDF(mensaje, urlPDF, cantidad) {
 
     var resp = UrlFetchApp.fetch(WEBHOOK_URL, params);
     Logger.log("📨 Discord: " + resp.getResponseCode());
+}
+
+
+/****************************************
+ *  NOTIFICAR MODIFICACION DE CATALOGO
+ ****************************************/
+function notificarModificacionCatalogoDiscord() {
+  try {
+    var webhookUrl = obtenerWebhookDiscord();
+    if (!webhookUrl) {
+      Logger.log('No se envio la notificacion: falta configurar DISCORD_WEBHOOK_URL o WEBHOOK_URL.');
+      return;
+    }
+
+    var spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+    var usuario = Session.getActiveUser().getEmail() || 'Usuario no disponible';
+    var fecha = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm:ss');
+
+    var payload = {
+      content: '**Aviso:** se esta modificando el catalogo de la empresa.',
+      embeds: [
+        {
+          title: 'Modificacion de catalogo iniciada',
+          color: 16753920,
+          fields: [
+            {
+              name: 'Planilla',
+              value: spreadsheet ? spreadsheet.getName() : 'Planilla no disponible',
+              inline: true
+            },
+            {
+              name: 'Check',
+              value: CONTROL_SHEET_NAME + '!G2',
+              inline: true
+            },
+            {
+              name: 'Usuario',
+              value: usuario,
+              inline: false
+            },
+            {
+              name: 'Fecha',
+              value: fecha,
+              inline: true
+            }
+          ],
+          timestamp: new Date().toISOString()
+        }
+      ]
+    };
+
+    var params = {
+      method: 'post',
+      contentType: 'application/json',
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true
+    };
+
+    var response = UrlFetchApp.fetch(webhookUrl, params);
+    var code = response.getResponseCode();
+    Logger.log('Discord catalogo: ' + code);
+
+    if (code < 200 || code >= 300) {
+      Logger.log('Error enviando notificacion de catalogo a Discord: ' + response.getContentText());
+    }
+  } catch (err) {
+    Logger.log('Error en notificarModificacionCatalogoDiscord: ' + err.toString());
+  }
+}
+
+function obtenerWebhookDiscord() {
+  var scriptWebhook = PropertiesService.getScriptProperties().getProperty('DISCORD_WEBHOOK_URL');
+  return scriptWebhook || WEBHOOK_URL || '';
+}
+
+function probarNotificacionCatalogoDiscord() {
+  notificarModificacionCatalogoDiscord();
 }
 
 
