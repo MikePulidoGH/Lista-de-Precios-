@@ -142,131 +142,123 @@ function ejecutarControlSheet(col) {
 function recolectarProductosParaSync() {
   var spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
   var productos = [];
-  
+
   HOJAS.forEach(function(nombreHoja) {
     try {
       var hoja = spreadsheet.getSheetByName(nombreHoja);
       if (!hoja) return;
-      
+
       var ultimaFila = hoja.getLastRow();
       if (ultimaFila < 2) return;
-      
-      // Obtener datos desde Col A hasta Col E (5)
+
       var data = hoja.getRange(2, COL_CODIGO, ultimaFila - 1, COL_ACTUALIZADO).getValues();
-      
-      data.forEach(function(row) {
-        // Col E (índice 4) es el check de actualizado
-        var checkActualizado = row[COL_ACTUALIZADO - 1]; 
-        
-        if (checkActualizado === true) {
-          // Agregar datos de A:D (índices 0 a 3) - incluye PR y MP
-          productos.push(row.slice(0, COL_PRECIO_MP)); 
+
+      data.forEach(function(row, index) {
+        var check = row[COL_ACTUALIZADO - 1];
+
+        if (check === true) {
+          productos.push({
+            data: row.slice(0, COL_PRECIO_MP),
+            hoja: hoja,
+            fila: index + 2 // 🔥 importante
+          });
         }
       });
-      
+
     } catch (err) {
-      Logger.log("Error procesando hoja " + nombreHoja + " para sync: " + err);
+      Logger.log("Error en hoja " + nombreHoja + ": " + err);
     }
   });
-  
+
   return productos;
+}
+
+function marcarEstadoFila(hoja, fila, estado) {
+  var rango = hoja.getRange(fila, COL_ACTUALIZADO);
+
+  if (estado === "ok") {
+    rango.setBackground("#b7e1cd"); // verde
+  } else if (estado === "error") {
+    rango.setBackground("#f4c7c3"); // rojo
+  }
 }
 
 /****************************************
  * ENVIAR/ACTUALIZAR PRODUCTOS EN PLANILLAS EXTERNAS 
  ****************************************/
-function enviarProductosASummarySheets(targetKeys) {
-  // --- PASO A: Asegurarnos de incluir las 3 nuevas planillas ---
-  // Si targetKeys existe (viene del checkbox), le sumamos nuestras nuevas llaves
-  var keysAProcesar = targetKeys || [];
-  
-  // Agregamos manualmente las nuevas para que siempre se actualicen
-  var nuevas = ["NUEVA_SM", "NUEVA_AL", "NUEVA_SL"];
-  nuevas.forEach(function(n) {
-    if (keysAProcesar.indexOf(n) === -1) keysAProcesar.push(n);
-  });
+function enviarProductosASummarySheets() {
 
-  var productos = recolectarProductosParaSync(); 
-  
+  var keysAProcesar = Object.keys(TARGET_SHEET_IDS);
+  var productos = recolectarProductosParaSync();
+
   if (productos.length === 0) {
-    Logger.log("No hay productos con el check en Columna E para sincronizar."); 
+    Logger.log("⚠️ No hay productos para sincronizar.");
     return;
   }
-  
-  var totalProcesado = 0;
-  var results = []; 
-  
-  // Normalización de los datos (Tu lógica original intacta)
-  var productosNormalizados = productos.map(function(rowData) {
-    rowData[COL_CODIGO - 1] = rowData[COL_CODIGO - 1] ? rowData[COL_CODIGO - 1].toString().trim() : '';
-    var precioPR = rowData[COL_PRECIO_PR - 1]; 
-    if (typeof precioPR === 'string') precioPR = precioPR.replace(/,/g, '.');
-    rowData[COL_PRECIO_PR - 1] = parseFloat(precioPR) || 0; 
-    var precioMP = rowData[COL_PRECIO_MP - 1];
-    if (typeof precioMP === 'string') precioMP = precioMP.replace(/,/g, '.');
-    rowData[COL_PRECIO_MP - 1] = parseFloat(precioMP) || 0;
-    return rowData;
-  });
-  
-  // Procesar cada planilla (Las viejas y las nuevas)
-  keysAProcesar.forEach(function(key) { 
-    var sheetId = TARGET_SHEET_IDS[key];
-    var targetTabName = TARGET_SHEET_TAB_NAMES[key];
-    
-    // Si por alguna razón no existe el ID para esa llave, saltar
-    if (!sheetId) return;
 
-    var sheetName = "ID: " + key;
-    var updatesCount = 0;
-    var newRowCount = 0;
-    
+  keysAProcesar.forEach(function(key) {
     try {
-      var targetSS = SpreadsheetApp.openById(sheetId);
-      sheetName = targetSS.getName();
-      var targetSheet = targetSS.getSheetByName(targetTabName); 
-      
-      if (!targetSheet) throw new Error('Pestaña "' + targetTabName + '" no encontrada.');
-      
-      var targetData = targetSheet.getDataRange().getValues();
-      var targetCodes = targetData.slice(1).map(function(row) {
-        return row[COL_CODIGO - 1] ? row[COL_CODIGO - 1].toString().trim() : '';
-      }); 
-      
-      var updates = [];
-      var newRows = [];
-      
-      productosNormalizados.forEach(function(rowData) {
-        var code = rowData[COL_CODIGO - 1];
-        var codeIndex = targetCodes.indexOf(code);
-        
-        if (codeIndex !== -1) {
-          updates.push({
-            range: targetSheet.getRange(codeIndex + 2, COL_CODIGO, 1, COL_PRECIO_MP), 
-            values: [rowData.slice(0, COL_PRECIO_MP)]
-          });
-          updatesCount++;
-        } else {
-          newRows.push(rowData.slice(0, COL_PRECIO_MP));
-          newRowCount++;
-        }
-        totalProcesado++;
+      var ss = SpreadsheetApp.openById(TARGET_SHEET_IDS[key]);
+      var sheet = ss.getSheetByName(TARGET_SHEET_TAB_NAMES[key]);
+      if (!sheet) throw new Error("Hoja no encontrada");
+
+      var data = sheet.getDataRange().getValues();
+
+      // 🔥 Mapa código → fila
+      var mapa = {};
+      data.slice(1).forEach(function(row, i) {
+        var cod = row[COL_CODIGO - 1] ? row[COL_CODIGO - 1].toString().trim() : '';
+        if (cod) mapa[cod] = i + 2;
       });
-      
-      updates.forEach(function(upd) { upd.range.setValues(upd.values); });
-      if (newRows.length > 0) {
-        targetSheet.getRange(targetSheet.getLastRow() + 1, COL_CODIGO, newRows.length, COL_PRECIO_MP).setValues(newRows);
-      }
-      
-      results.push('✅ ' + key + ' (' + sheetName + '): ' + updatesCount + ' actualizados, ' + newRowCount + ' nuevos.');
-      
+
+      productos.forEach(function(prod) {
+        var rowData = prod.data;
+        var hojaOrigen = prod.hoja;
+        var filaOriginal = prod.fila;
+
+        try {
+          var codigo = rowData[COL_CODIGO - 1]?.toString().trim();
+          var precioPR = parseFloat((rowData[COL_PRECIO_PR - 1] + "").replace(",", "."));
+          var precioMP = parseFloat((rowData[COL_PRECIO_MP - 1] + "").replace(",", "."));
+
+          if (!codigo || isNaN(precioPR) || isNaN(precioMP)) {
+            throw new Error("Datos inválidos");
+          }
+
+          var nuevaFila = [
+            codigo,
+            rowData[COL_PRODUCTO - 1],
+            precioPR,
+            precioMP
+          ];
+
+          if (mapa[codigo]) {
+            sheet.getRange(mapa[codigo], COL_CODIGO, 1, COL_PRECIO_MP)
+              .setValues([nuevaFila]);
+          } else {
+            sheet.getRange(sheet.getLastRow() + 1, COL_CODIGO, 1, COL_PRECIO_MP)
+              .setValues([nuevaFila]);
+          }
+
+          // ✅ OK
+          marcarEstadoFila(hojaOrigen, filaOriginal, "ok");
+
+        } catch (e) {
+          Logger.log("❌ Error producto fila " + filaOriginal + ": " + e.message);
+
+          // ❌ ERROR
+          marcarEstadoFila(hojaOrigen, filaOriginal, "error");
+        }
+      });
+
+      Logger.log("✅ " + key + " procesado");
+
     } catch (e) {
-      results.push('❌ ERROR en ' + key + ': ' + e.message);
+      Logger.log("❌ Error en planilla " + key + ": " + e.message);
     }
   });
-  
-  if (totalProcesado > 0) limpiarChecksActualizado();
-  
-  Logger.log('✔ Sincronización finalizada.\n' + results.join('\n'));
+
+  Logger.log("🚀 Sincronización completa.");
 }
 
 /****************************************
