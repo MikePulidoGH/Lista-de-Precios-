@@ -89,8 +89,8 @@ function handleEdit(e) {
     const col = e.range.getColumn();
     const valor = e.range.getValue();
 
-    // Modificado: Ahora acepta desde columna 1 (A) hasta la 7 (G) [1, 3, 4]
-    if (nombreHoja === CONTROL_SHEET_NAME && fila === 2 && col >= 1 && col <= 7 && valor === true) {
+    // Modificado: Ahora acepta desde columna 1 (A) hasta la 9 (I)
+    if (nombreHoja === CONTROL_SHEET_NAME && fila === 2 && col >= 1 && col <= 9 && valor === true) {
       
       // Desmarcamos el checkbox inmediatamente para evitar ejecuciones dobles [1, 3]
       e.range.setValue(false);
@@ -109,12 +109,10 @@ function ejecutarControlSheet(col) {
     case 1: // A2: Activa AMBOS catálogos
       Logger.log("🚀 Iniciando actualización simultánea (PR y MP)...");
       
-      // Ejecutamos ambas funciones (asegurate de haber borrado el limpiarChecks de adentro)
-      actualizarPreciosEnSlides(); 
-      actualizarPreciosMPEnSlides(); 
-
-      // RECIÉN AL FINAL de ambas, limpiamos la planilla para que la 2da función encuentre datos
-      limpiarChecksActualizado(); 
+      // Ejecutamos ambas funciones y evaluamos resultado visual en Columna E
+      var resultadoPR = actualizarPreciosEnSlides(); 
+      var resultadoMP = actualizarPreciosMPEnSlides(); 
+      pintarResultadoActualizacion(resultadoPR, resultadoMP);
       
       break; // 👈 Agregamos el break para que no salte al caso 7 (G2)
        
@@ -128,6 +126,11 @@ function ejecutarControlSheet(col) {
       
     case 6: // F2: Enviar reporte a Discord
       recolectarTodasLasHojas();
+      break;
+    
+    case 9: // I2: Reset visual y checks
+      limpiarColorChecksActualizado();
+      limpiarTodosLosChecks();
       break;
 
     default:
@@ -595,6 +598,96 @@ function limpiarChecksActualizado() {
   });
 }
 
+function pintarChecksActualizados(colorHex) {
+  var spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  HOJAS.forEach(function(nombreHoja) {
+    try {
+      var hoja = spreadsheet.getSheetByName(nombreHoja);
+      if (!hoja) return;
+      var ultimaFila = hoja.getLastRow();
+      if (ultimaFila < 2) return;
+
+      var checkRange = hoja.getRange(2, COL_ACTUALIZADO, ultimaFila - 1, 1);
+      var checks = checkRange.getValues();
+      var fondosActuales = checkRange.getBackgrounds();
+      var huboCambios = false;
+
+      for (var i = 0; i < checks.length; i++) {
+        if (checks[i][0] === true && fondosActuales[i][0] !== colorHex) {
+          fondosActuales[i][0] = colorHex;
+          huboCambios = true;
+        }
+      }
+
+      if (huboCambios) {
+        checkRange.setBackgrounds(fondosActuales);
+      }
+    } catch (err) {
+      Logger.log("Error pintando checks en hoja " + nombreHoja + ": " + err);
+    }
+  });
+}
+
+function pintarResultadoActualizacion(resultadoPR, resultadoMP) {
+  var spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  var okGlobalPR = resultadoPR && resultadoPR.ok === true;
+  var okGlobalMP = resultadoMP && resultadoMP.ok === true;
+  var codigosPR = (resultadoPR && resultadoPR.codigosActualizados) ? resultadoPR.codigosActualizados : {};
+  var codigosMP = (resultadoMP && resultadoMP.codigosActualizados) ? resultadoMP.codigosActualizados : {};
+
+  HOJAS.forEach(function(nombreHoja) {
+    try {
+      var hoja = spreadsheet.getSheetByName(nombreHoja);
+      if (!hoja) return;
+      var ultimaFila = hoja.getLastRow();
+      if (ultimaFila < 2) return;
+
+      var rango = hoja.getRange(2, COL_CODIGO, ultimaFila - 1, COL_ACTUALIZADO);
+      var data = rango.getValues(); // A:E
+      var fondos = hoja.getRange(2, COL_ACTUALIZADO, ultimaFila - 1, 1).getBackgrounds();
+      var huboCambios = false;
+
+      for (var i = 0; i < data.length; i++) {
+        var codigo = data[i][COL_CODIGO - 1] ? data[i][COL_CODIGO - 1].toString().trim() : '';
+        var checkMarcado = data[i][COL_ACTUALIZADO - 1] === true;
+        if (!checkMarcado || !codigo) continue;
+
+        var actualizadoPR = !!codigosPR[codigo];
+        var actualizadoMP = !!codigosMP[codigo];
+        var exitoFila = okGlobalPR && okGlobalMP && actualizadoPR && actualizadoMP;
+        var color = exitoFila ? '#b7e1cd' : '#f4c7c3';
+
+        if (fondos[i][0] !== color) {
+          fondos[i][0] = color;
+          huboCambios = true;
+        }
+      }
+
+      if (huboCambios) {
+        hoja.getRange(2, COL_ACTUALIZADO, ultimaFila - 1, 1).setBackgrounds(fondos);
+      }
+    } catch (err) {
+      Logger.log("Error pintando resultado en hoja " + nombreHoja + ": " + err);
+    }
+  });
+}
+
+function limpiarColorChecksActualizado() {
+  var spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  HOJAS.forEach(function(nombreHoja) {
+    try {
+      var hoja = spreadsheet.getSheetByName(nombreHoja);
+      if (!hoja) return;
+      var ultimaFila = hoja.getLastRow();
+      if (ultimaFila < 2) return;
+
+      hoja.getRange(2, COL_ACTUALIZADO, ultimaFila - 1, 1).setBackground(null);
+    } catch (err) {
+      Logger.log("Error limpiando color de checks en hoja " + nombreHoja + ": " + err);
+    }
+  });
+}
+
 /****************************************
  * LIMPIEZA TOTAL DE CHECKS (para el flujo de Discord)
  ****************************************/
@@ -1013,6 +1106,7 @@ function actualizarPreciosEnSlides() {
   try {
     const deck = SlidesApp.openById(SLIDES_ID);
     let cambios = 0;
+    const codigosActualizados = {};
 
     deck.getSlides().forEach(slide => {
       slide.getShapes().forEach(shape => {
@@ -1047,6 +1141,7 @@ function actualizarPreciosEnSlides() {
                 .setFontSize(25);
               
               cambios++;
+              codigosActualizados[codigo] = true;
               break; // Pasa al siguiente cuadro de texto
             }
           }
@@ -1054,8 +1149,10 @@ function actualizarPreciosEnSlides() {
       });
     });
     Logger.log("✅ Proceso terminado. Se actualizaron " + cambios + " cuadros.");
+    return { ok: true, codigosActualizados: codigosActualizados };
   } catch (err) {
     Logger.log("❌ Error en Slides: " + err.message);
+    return { ok: false, codigosActualizados: {} };
   }
 }
 /**
@@ -1086,6 +1183,7 @@ function actualizarPreciosMPEnSlides() {
   try {
     const deck = SlidesApp.openById(SLIDES_ID_MP);
     let cambios = 0;
+    const codigosActualizados = {};
 
     deck.getSlides().forEach(slide => {
       slide.getShapes().forEach(shape => {
@@ -1113,14 +1211,16 @@ function actualizarPreciosMPEnSlides() {
                 .setFontFamily("Arial").setFontSize(25);
               
               cambios++;
+              codigosActualizados[codigo] = true;
             }
           }
         }
       });
     });
     Logger.log("✅ Catálogo MP actualizado. Cambios: " + cambios);
-    limpiarChecksActualizado(); // Limpia los checks en la planilla [8], [9]
+    return { ok: true, codigosActualizados: codigosActualizados };
   } catch (err) {
     Logger.log("❌ Error en Slides MP: " + err.message);
+    return { ok: false, codigosActualizados: {} };
   }
 }
