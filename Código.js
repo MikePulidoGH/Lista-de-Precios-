@@ -4,7 +4,7 @@
 
 // 🚨 REEMPLAZA ESTAS IDs con las de tus planillas originales
 const SPREADSHEET_ID_INVENTARIO = '10sIFWNX3UtOHJD_26isE6n_lAH5osU7Y6NWVHxrUUmU';  // ID de tu planilla de INVENTARIO
-const SPREADSHEET_ID_REMITOS = '1xCi34du_nIdsVOeToHTJXEh1cJp9-BMjSgx3DIG5q-w'; // ID de tu planilla principal (donde están RESUMEN SM y R1-SM)
+const SPEADSHEET_ID_REMITOS = '1xCi34du_nIdsVOeToHTJXEh1cJp9-BMjSgx3DIG5q-w'; // ID de tu planilla principal (donde están RESUMEN SM y R1-SM)
 const ID_PROVEEDORES = "1-DyX0FvHgUtqTDbxpxkwkyqhYROpn-BZ0_2iwp-kY-c"; // ID de tu planilla de precios de Proveedores
 
 // 💡 ID DE LA CARPETA DONDE SE GUARDAN LOS PDFs
