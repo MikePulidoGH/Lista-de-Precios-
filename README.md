@@ -1,0 +1,1 @@
+para conectar con obsidian
